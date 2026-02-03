@@ -7,7 +7,7 @@ The code also includes tools to:
 
 Evaluate molecular interaction energies and force-field potentials.
 
-Generate parameter sets consistent with AIM density partitioning (e.g., from HORTON and Denspart tools).
+Generate parameter sets consistent with AIM density partitioning (e.g., from Denspart tools).
 
 Benchmark derived models against ab initio reference data.
 
@@ -21,12 +21,6 @@ Afterwards, you just `conda activate env_qcdevs_py310` to restore the environmen
 conda create -n env_qcdevs python=3.10
 conda activate env_qcdevs_py310
 
-# install HORTON2.3
-conda install  -c conda-forge -c theochem horton --yes
-conda install nose
-# run tests (you should get "OK (SKIP=1)")
-pip install pytest # otherwise nosetests crashes
-nosetests -v horton
 
  # install IOData, Grid, GBasis, DensPart, AtomDB
  pip install git+https://github.com/theochem/iodata.git
@@ -53,13 +47,13 @@ from ffprime.nb import Nonbonded
 # Derive nonbonded parameters from a Gaussian-formatted checkpoint file
 mol = Nonbonded.from_file(
     fname="ffprime/examples/lig.fchk",
-    schemes=["mbis-horton"],      # AIM partitioning scheme
+    schemes=["mbis"],      # AIM partitioning scheme
     args="insane",                # calculation control argument
     pro_level="ub3lyp_def2tzvpd"  # level of theory and basis set
 )
 
 # Display derived atomic parameters
-print("Atomic charges (MBIS-HORTON):")
+print("Atomic charges (MBIS):")
 print(mol.atcharges)
 
 print("\nLennard-Jones σ parameters (Å):")
