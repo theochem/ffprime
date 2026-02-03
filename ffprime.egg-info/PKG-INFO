@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: ffprime
+Version: 0.0.0
+Summary: Force Field derivation and evaluation.
+Author: QcDevs Team
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: scipy==1.16.2
+Requires-Dist: matplotlib
+Requires-Dist: horton
+Requires-Dist: qc-iodata@ git+https://github.com/theochem/iodata.git@main#egg=qc-iodata
+Requires-Dist: qc-grid@ git+https://github.com/theochem/grid.git@master#egg=qc-grid
+Requires-Dist: qc-gbasis@ git+https://github.com/theochem/gbasis.git@master#egg=qc-gbasis
+Requires-Dist: denspart@ git+https://github.com/theochem/denspart.git@main#egg=denspart
+Requires-Dist: qc-atomdb@ git+https://github.com/theochem/AtomDB.git@master#egg=qc-atomdb
+Dynamic: author
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary

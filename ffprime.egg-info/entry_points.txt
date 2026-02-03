@@ -1,0 +1,2 @@
+[console_scripts]
+ffprime = ffprime.scripts.main:main

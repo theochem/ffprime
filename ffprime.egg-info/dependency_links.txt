@@ -1,0 +1,5 @@
+git+https://github.com/theochem/iodata.git@main#egg=qc-iodata
+git+https://github.com/theochem/grid.git@main#egg=qc-grid
+git+https://github.com/theochem/gbasis.git@main#egg=qc-gbasis
+git+https://github.com/theochem/denspart.git@main#egg=denspart
+git+https://github.com/theochem/AtomDB.git@master#egg=qc-atomdb

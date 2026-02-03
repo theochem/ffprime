@@ -1,0 +1,9 @@
+numpy
+scipy==1.16.2
+matplotlib
+horton
+qc-iodata@ git+https://github.com/theochem/iodata.git@main#egg=qc-iodata
+qc-grid@ git+https://github.com/theochem/grid.git@master#egg=qc-grid
+qc-gbasis@ git+https://github.com/theochem/gbasis.git@master#egg=qc-gbasis
+denspart@ git+https://github.com/theochem/denspart.git@main#egg=denspart
+qc-atomdb@ git+https://github.com/theochem/AtomDB.git@master#egg=qc-atomdb
