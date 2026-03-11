@@ -1,4 +1,4 @@
-from utils.connectivity import parse_gaussian_connectivities
+from ffprime.utils.connectivity import parse_gaussian_connectivities
 from iodata import load_one
 import os       
 import numpy as np
@@ -14,9 +14,10 @@ class Bonded:
             raise ValueError("Hessian matrix is not real symmetric.")
         N = len(self.mol.atnums)
         tolerance = -1e-4  # skip small negative eigenvalues due to numerical noise
+        self.hess_new = self.hess.copy()
         if np.any(evals < tolerance):
             print(f"Negative eigenvalues detected, transforming Hessian")
-            evals = evals = [1.0 if val < tolerance else val for val in evals]
+            evals = [1.0 if val < tolerance else val for val in evals]
             evals_m = np.zeros([3 * N, 3 * N])
             for i in range(len(evals)):
                 evals_m[i][i] = evals[i]
@@ -29,8 +30,10 @@ class Bonded:
             else:
                 raise ValueError("Eigenvectors are not orthonormal.")
 
-        self.hess_new = (self.hess_new * 627.509391) / (0.529 ** 2)
-        self.hess = (self.hess * 627.509391) / (0.529 ** 2)
+        # Conversion to kcal/mol/A^2 (Hartree/Bohr^2 to kcal/mol/A^2)    
+        # Units: (627.509391 kcal/mol / Hartree) / (0.529177 A / Bohr)^2
+        self.hess_new = (self.hess_new * 627.509391) / (0.529177 ** 2)
+        self.hess = (self.hess * 627.509391) / (0.529177 ** 2)
         if np.allclose(self.hess, self.hess_new, atol=1e-8):
             print("Hessian matrix is real symmetric and orthonormal.")
 
@@ -40,7 +43,7 @@ class Bonded:
         hess: Hessian matrix obtained from a frequency calculation.
         """
         if hess is None:
-            raise ValueError("A Hessian matrix must be provided as the 'hess' argument.")
+            hess = self.hess_new
         idx_i = atom_i
         idx_j = atom_j
         # Extract the submatrix for the atom pair
@@ -59,30 +62,64 @@ class Bonded:
     
     def get_angle_force_constant(self, atom_i, atom_j, atom_k, hess=None):
         """
-        Calculate the force constant for the angle formed by three atoms (atom_i, atom_j, atom_k).
-        hess: Hessian matrix obtained from a frequency calculation.
+        Calculate the force constant ($k_{\\theta}$) for the angle $i-j-k$.
+
+        This method implements the Seminario formula:
+        $$\\frac{1}{k_{\\theta}} = \\frac{r_{ji}^2}{k_{PA}} + \\frac{r_{jk}^2}{k_{PC}}$$
+        where $k_{PA}$ and $k_{PC}$ are projected force constants perpendicular 
+        to the bonds in the plane of the angle.
+
+        Parameters
+        ----------
+        atom_i
+            Index of the first terminal atom.
+        atom_j
+            Index of the central atom.
+        atom_k
+            Index of the second terminal atom.
+        hess
+            Hessian matrix in kcal/mol/A^2. Defaults to self.hess_new.
+
+        Returns
+        -------
+        k_theta
+            The derived angle force constant in kcal/mol/rad^2.
         """
         if hess is None:
-            raise ValueError("A Hessian matrix must be provided as the 'hess' argument.")
-        idx_i = atom_i
-        idx_j = atom_j
-        idx_k = atom_k
-        # Vector from A to B
-        u_AB = self.mol.atcoords[idx_j] - self.mol.atcoords[idx_i]
-        u_AB /= np.linalg.norm(u_AB)
+            hess = self.hess_new
+        
+        # Geometry vectors
+        v_ji = self.mol.atcoords[atom_i] - self.mol.atcoords[atom_j]
+        u_ji = v_ji / np.linalg.norm(v_ji)
 
-        # Vector from C to B
-        u_CB = self.mol.atcoords[idx_j] - self.mol.atcoords[idx_k]
-        u_CB /= np.linalg.norm(u_CB)
+        v_jk = self.mol.atcoords[atom_k] - self.mol.atcoords[atom_j]
+        u_jk = v_jk / np.linalg.norm(v_jk)
 
-        # Normal vector to the ABC plane
-        u_N = np.cross(u_CB, u_AB)
+        # Define the coordinate system for the angle plane
+        u_N = np.cross(u_jk, u_ji)
         u_N /= np.linalg.norm(u_N)
 
-        # Vector in the ABC plane, perpendicular to AB
-        u_PA = np.cross(u_N, u_AB)
+        u_PA = np.cross(u_N, u_ji)
         u_PA /= np.linalg.norm(u_PA)
 
+        u_PC =  np.cross(u_jk, u_N)
+        u_PC /= np.linalg.norm(u_PC)
+
+        # Off-diagonal Hessian blocks
+        H_ij = hess[(3 * atom_i):(3 * (atom_i + 1)), (3 * atom_j):(3 * (atom_j + 1))]
+        H_kj = hess[(3 * atom_k):(3 * (atom_k + 1)), (3 * atom_j):(3 * (atom_j + 1))]
+
+        eval_ij, evec_ij = np.linalg.eig(H_ij)
+        eval_kj, evec_kj = np.linalg.eig(H_kj)
+
+        # Projections onto the bending directions
+        k_PA = -np.real(sum(eval_ij[m] * abs(np.dot(u_PA, evec_ij[:, m])) for m in range(3)))
+        k_PC = -np.real(sum(eval_kj[m] * abs(np.dot(u_PC, evec_kj[:, m])) for m in range(3)))
+
+        # Harmonic combination
+        k_theta = 1.0 / ((np.linalg.norm(v_ji)**2 / k_PA) + (np.linalg.norm(v_jk)**2 / k_PC))
+
+        return k_theta
 
     def compute_all_k_ij(self, bonds_list, hessian):
         """
@@ -100,6 +137,7 @@ class Bonded:
             else:
                 bonds_list[idx] = (*bond[:2], k_ij_avg)
         #return bonds_list
-job = Bonded(log_path="bonding/lig.log", fchk_path="bonding/lig.fchk")
-#job.compute_all_k_ij(job.bonds, job.hess_new)
-#print([b[3] for b in job.bonds])  # Print the force constants for each bond
+if __name__ == "__main__":
+    job = Bonded(log_path="bonding/lig.log", fchk_path="bonding/lig.fchk")
+    #job.compute_all_k_ij(job.bonds, job.hess_new)
+    #print([b[3] for b in job.bonds])  # Print the force constants for each bond
