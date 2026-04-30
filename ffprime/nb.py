@@ -48,8 +48,8 @@ class Nonbonded:
             c6s_eff[i] = (volume_ratios[i])**2 * Element(atnum).c6["chu"]
             a_eff[i]  = (volume_ratios[i])    * Element(atnum).pold["chu"]
 
-            sigma[i] = (5.08 * a_eff[i]**(1/7)) / (2**(1/6)) / nanometer
-            epsilon[i] = c6s_eff[i] / (2 * (5.08 * a_eff[i]**(1/7))**6) / kjmol
+            sigma[i] = np.maximum(0.1, (5.08 * a_eff[i]**(1/7)) / (2**(1/6)))
+            epsilon[i] = np.maximum(0.0, c6s_eff[i] / (2 * (sigma[i] * (2**(1/6)))**6))
 
         # Store computed parameters
         self.atnums = atnums
