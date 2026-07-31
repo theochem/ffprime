@@ -19,7 +19,13 @@ def project_field(field, direction):
     ndarray
         Scalar projection(s) of the field onto the direction.
     """
+    
     field = np.asarray(field, dtype=float)
+    
+    # sanity check for 3d vector in the field array
+    if field.shape[-1] != 3:
+        raise ValueError("Field must have last dimension equal to 3.")
+    
     direction = np.asarray(direction, dtype=float)
 
     norm = np.linalg.norm(direction)
