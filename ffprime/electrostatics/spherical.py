@@ -29,13 +29,23 @@ Dipole components:
     Q_11c = px
     Q_11s = py
 
-Quadrupole components:
+Quadrupole components (real spherical, Racah-normalized off-diagonal
+terms -- Stone, "The Theory of Intermolecular Forces", eq. 3.xx):
 
-    Q_20  = Θzz
-    Q_21c = Θxz
-    Q_21s = Θyz
-    Q_22c = (Θxx - Θyy) / 2
-    Q_22s = Θxy
+    Q_20  = Theta_zz
+    Q_21c = (2/sqrt(3)) * Theta_xz
+    Q_21s = (2/sqrt(3)) * Theta_yz
+    Q_22c = (Theta_xx - Theta_yy) / sqrt(3)
+    Q_22s = (2/sqrt(3)) * Theta_xy
+
+with inverse (using tracelessness, Theta_xx + Theta_yy + Theta_zz = 0):
+
+    Theta_zz = Q_20
+    Theta_xz = (sqrt(3)/2) * Q_21c
+    Theta_yz = (sqrt(3)/2) * Q_21s
+    Theta_xy = (sqrt(3)/2) * Q_22s
+    Theta_xx = -Q_20/2 + (sqrt(3)/2) * Q_22c
+    Theta_yy = -Q_20/2 - (sqrt(3)/2) * Q_22c
 
 References
 ----------
@@ -51,6 +61,8 @@ from ffprime.electrostatics.cartesian import (
     quadrupole_field,
 )
 from ffprime.electrostatics.utils import compute_displacement, validate_shapes
+
+_SQRT3 = np.sqrt(3.0)
 
 
 # ---------------------------------------------------------------------------
@@ -112,13 +124,20 @@ def quadrupole_cartesian_to_spherical(theta: np.ndarray) -> np.ndarray:
 
     Notes
     -----
-    Stone convention:
+    Stone convention (Racah-normalized off-diagonal terms):
 
-    Q_20  = Θzz
-    Q_21c = Θxz
-    Q_21s = Θyz
-    Q_22c = (Θxx - Θyy)/2
-    Q_22s = Θxy
+        Q_20  = Theta_zz
+        Q_21c = (2/sqrt(3)) * Theta_xz
+        Q_21s = (2/sqrt(3)) * Theta_yz
+        Q_22c = (Theta_xx - Theta_yy) / sqrt(3)
+        Q_22s = (2/sqrt(3)) * Theta_xy
+
+    The factor of 2/sqrt(3) (equivalently 1/sqrt(3) on the diagonal
+    combination) is the Racah normalization that makes these components
+    consistent with the real solid/spherical harmonics used throughout
+    Stone's "The Theory of Intermolecular Forces". It is *not* optional
+    bookkeeping -- omitting it changes the physical magnitude represented
+    by Q_21c/Q_21s/Q_22c/Q_22s relative to a genuine Stone multipole.
     """
     theta = np.asarray(theta)
 
@@ -136,10 +155,10 @@ def quadrupole_cartesian_to_spherical(theta: np.ndarray) -> np.ndarray:
         )
 
     Q_20 = theta[2, 2]
-    Q_21c = theta[0, 2]
-    Q_21s = theta[1, 2]
-    Q_22c = (theta[0, 0] - theta[1, 1]) / 2.0
-    Q_22s = theta[0, 1]
+    Q_21c = (2.0 / _SQRT3) * theta[0, 2]
+    Q_21s = (2.0 / _SQRT3) * theta[1, 2]
+    Q_22c = (theta[0, 0] - theta[1, 1]) / _SQRT3
+    Q_22s = (2.0 / _SQRT3) * theta[0, 1]
 
     return np.array([Q_20, Q_21c, Q_21s, Q_22c, Q_22s])
 
@@ -156,6 +175,18 @@ def quadrupole_spherical_to_cartesian(q: np.ndarray) -> np.ndarray:
     -------
     np.ndarray, shape (3, 3)
         Symmetric traceless Cartesian quadrupole tensor.
+
+    Notes
+    -----
+    Inverse of the Stone convention used by
+    ``quadrupole_cartesian_to_spherical``:
+
+        Theta_zz = Q_20
+        Theta_xz = (sqrt(3)/2) * Q_21c
+        Theta_yz = (sqrt(3)/2) * Q_21s
+        Theta_xy = (sqrt(3)/2) * Q_22s
+        Theta_xx = -Q_20/2 + (sqrt(3)/2) * Q_22c
+        Theta_yy = -Q_20/2 - (sqrt(3)/2) * Q_22c
     """
     q = np.asarray(q)
 
@@ -168,11 +199,11 @@ def quadrupole_spherical_to_cartesian(q: np.ndarray) -> np.ndarray:
 
     theta = np.zeros((3, 3))
     theta[2, 2] = Q_20
-    theta[0, 0] = Q_22c - Q_20 / 2.0
-    theta[1, 1] = -Q_22c - Q_20 / 2.0
-    theta[0, 2] = theta[2, 0] = Q_21c
-    theta[1, 2] = theta[2, 1] = Q_21s
-    theta[0, 1] = theta[1, 0] = Q_22s
+    theta[0, 0] = -Q_20 / 2.0 + (_SQRT3 / 2.0) * Q_22c
+    theta[1, 1] = -Q_20 / 2.0 - (_SQRT3 / 2.0) * Q_22c
+    theta[0, 2] = theta[2, 0] = (_SQRT3 / 2.0) * Q_21c
+    theta[1, 2] = theta[2, 1] = (_SQRT3 / 2.0) * Q_21s
+    theta[0, 1] = theta[1, 0] = (_SQRT3 / 2.0) * Q_22s
 
     return theta
 
@@ -243,6 +274,31 @@ def spherical_quadrupole_potential(quadrupoles, coords, points):
     Returns
     -------
     potential : np.ndarray, shape (M,)
+
+    Notes
+    -----
+    The potential is
+
+        V(r) = Theta_ab r_a r_b / r^5
+             = [ Theta_xx x^2 + Theta_yy y^2 + Theta_zz z^2
+                 + 2 Theta_xy x y + 2 Theta_xz x z + 2 Theta_yz y z ] / r^5
+
+    Substituting the Stone relations
+
+        Theta_zz = Q_20
+        Theta_xx = -Q_20/2 + (sqrt(3)/2) Q_22c
+        Theta_yy = -Q_20/2 - (sqrt(3)/2) Q_22c
+        Theta_xy = (sqrt(3)/2) Q_22s
+        Theta_xz = (sqrt(3)/2) Q_21c
+        Theta_yz = (sqrt(3)/2) Q_21s
+
+    gives
+
+        V(r) = [ Q_20 (z^2 - (x^2+y^2)/2)
+                 + (sqrt(3)/2) Q_22c (x^2 - y^2)
+                 + sqrt(3) Q_22s x y
+                 + sqrt(3) Q_21c x z
+                 + sqrt(3) Q_21s y z ] / r^5
     """
     quadrupoles = np.asarray(quadrupoles)
     coords = np.asarray(coords)
@@ -272,10 +328,10 @@ def spherical_quadrupole_potential(quadrupoles, coords, points):
 
     numerator = (
         Q20[np.newaxis, :] * (z**2 - 0.5 * (x**2 + y**2))
-        + Q22c[np.newaxis, :] * (x**2 - y**2)
-        + 2.0 * Q22s[np.newaxis, :] * x * y
-        + 2.0 * Q21c[np.newaxis, :] * x * z
-        + 2.0 * Q21s[np.newaxis, :] * y * z
+        + (_SQRT3 / 2.0) * Q22c[np.newaxis, :] * (x**2 - y**2)
+        + _SQRT3 * Q22s[np.newaxis, :] * x * y
+        + _SQRT3 * Q21c[np.newaxis, :] * x * z
+        + _SQRT3 * Q21s[np.newaxis, :] * y * z
     )
 
     return np.sum(numerator / safe_r**5, axis=1)

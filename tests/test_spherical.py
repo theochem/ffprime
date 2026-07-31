@@ -28,6 +28,8 @@ from ffprime.electrostatics.spherical import (
     spherical_quadrupole_field,
 )
 
+SQRT3 = np.sqrt(3.0)
+
 
 # ---------------------------------------------------------------------------
 # Monopole field
@@ -287,6 +289,16 @@ def test_quadrupole_field_along_z():
     Cartesian quadrupole_field implementation for this tensor at
     (0, 0, 2) gives the expected field directly, which is then checked
     against spherical_quadrupole_field's result.
+
+    Analytical check (E = 5(Θ:rr)r/r^7 - 2(Θ·r)/r^5, see
+    ``cartesian.quadrupole_field``): Θ:rr = Θzz*z^2 = 4, r = 2, so
+    term1 = 5*4*(0,0,2)/128 = (0,0,0.3125); Θ·r = (0,0,Θzz*2) = (0,0,2),
+    so term2 = 2*(0,0,2)/32 = (0,0,0.125); E = term1 - term2 =
+    (0,0,0.1875). NOTE: this literal was previously (0,0,0.25), which
+    was only correct under the old, buggy ``quadrupole_field``
+    implementation that was missing the factor of 2 on the Θ·r term
+    (unrelated to the Stone-convention normalization); it has been
+    corrected here to match the fixed physics.
     """
     quadrupoles = np.array([[1.0, 0.0, 0.0, 0.0, 0.0]])
     coords = np.array([[0.0, 0.0, 0.0]])
@@ -312,7 +324,138 @@ def test_quadrupole_field_along_z():
     )
 
     assert np.allclose(result, expected)
-    assert np.allclose(result, [[0.0, 0.0, 0.25]])
+    assert np.allclose(result, [[0.0, 0.0, 0.1875]])
+
+
+# ---------------------------------------------------------------------------
+# Quadrupole -- Stone-convention regression tests (hand-derived, NOT
+# round-trip-only). These pin down the exact numeric normalization
+# (the Racah sqrt(3) factors on the m=+-1/+-2 components) so that a
+# future regression that reintroduces the old, incorrect normalization
+# is caught even though the round-trip and internal-consistency tests
+# above cannot detect it (a normalization error applied consistently
+# to both the forward and inverse conversion is invisible to a
+# round-trip check).
+# ---------------------------------------------------------------------------
+
+def test_quadrupole_cartesian_to_spherical_hand_computed():
+    """Explicit tensor with all off-diagonal components nonzero, checked
+    against the literal Stone equations:
+
+        Q20  = Theta_zz
+        Q21c = (2/sqrt(3)) Theta_xz
+        Q21s = (2/sqrt(3)) Theta_yz
+        Q22c = (Theta_xx - Theta_yy) / sqrt(3)
+        Q22s = (2/sqrt(3)) Theta_xy
+    """
+    theta = np.array([
+        [1.0, 0.5, 0.3],
+        [0.5, -2.0, 0.7],
+        [0.3, 0.7, 1.0],
+    ])
+    assert np.isclose(np.trace(theta), 0.0)
+
+    q = quadrupole_cartesian_to_spherical(theta)
+
+    expected = np.array([
+        theta[2, 2],
+        (2.0 / SQRT3) * theta[0, 2],
+        (2.0 / SQRT3) * theta[1, 2],
+        (theta[0, 0] - theta[1, 1]) / SQRT3,
+        (2.0 / SQRT3) * theta[0, 1],
+    ])
+    np.testing.assert_allclose(q, expected, atol=1e-12)
+
+    # Literal numeric values for this tensor (independent sanity pin).
+    np.testing.assert_allclose(
+        q,
+        [
+            1.0,
+            0.34641016151377546,
+            0.8082903768654762,
+            1.7320508075688772,
+            0.5773502691896257,
+        ],
+        atol=1e-12,
+    )
+
+
+def test_quadrupole_spherical_to_cartesian_hand_computed():
+    """Pick spherical components directly and verify the reconstructed
+    tensor against the hand-derived inverse Stone relations:
+
+        Theta_zz = Q20
+        Theta_xz = (sqrt(3)/2) Q21c
+        Theta_yz = (sqrt(3)/2) Q21s
+        Theta_xy = (sqrt(3)/2) Q22s
+        Theta_xx = -Q20/2 + (sqrt(3)/2) Q22c
+        Theta_yy = -Q20/2 - (sqrt(3)/2) Q22c
+    """
+    Q20, Q21c, Q21s, Q22c, Q22s = 0.8, -1.2, 0.4, 0.6, -0.9
+    theta = quadrupole_spherical_to_cartesian(
+        np.array([Q20, Q21c, Q21s, Q22c, Q22s])
+    )
+
+    expected_xx = -Q20 / 2.0 + (SQRT3 / 2.0) * Q22c
+    expected_yy = -Q20 / 2.0 - (SQRT3 / 2.0) * Q22c
+    expected_zz = Q20
+    expected_xy = (SQRT3 / 2.0) * Q22s
+    expected_xz = (SQRT3 / 2.0) * Q21c
+    expected_yz = (SQRT3 / 2.0) * Q21s
+
+    np.testing.assert_allclose(theta[0, 0], expected_xx, atol=1e-12)
+    np.testing.assert_allclose(theta[1, 1], expected_yy, atol=1e-12)
+    np.testing.assert_allclose(theta[2, 2], expected_zz, atol=1e-12)
+    np.testing.assert_allclose(theta[0, 1], expected_xy, atol=1e-12)
+    np.testing.assert_allclose(theta[0, 2], expected_xz, atol=1e-12)
+    np.testing.assert_allclose(theta[1, 2], expected_yz, atol=1e-12)
+    np.testing.assert_allclose(theta, theta.T, atol=1e-12)
+    np.testing.assert_allclose(np.trace(theta), 0.0, atol=1e-12)
+
+
+def _random_traceless_symmetric(seed):
+    rng = np.random.default_rng(seed)
+    a = rng.uniform(-2, 2, size=(3, 3))
+    a = (a + a.T) / 2.0
+    trace = np.trace(a)
+    a[0, 0] -= trace / 3.0
+    a[1, 1] -= trace / 3.0
+    a[2, 2] -= trace / 3.0
+    return a
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3])
+def test_quadrupole_roundtrip_random_tensors_with_all_off_diagonals(seed):
+    """Round-trip check over random traceless tensors with non-zero xy,
+    xz, and yz components (the earlier ``test_quadrupole_roundtrip``
+    only exercises one fixed tensor)."""
+    theta_in = _random_traceless_symmetric(seed)
+    q = quadrupole_cartesian_to_spherical(theta_in)
+    theta_out = quadrupole_spherical_to_cartesian(q)
+    np.testing.assert_allclose(theta_out, theta_in, atol=1e-10)
+
+
+def test_spherical_quadrupole_potential_matches_cartesian_off_diagonal():
+    """Cross-check spherical_quadrupole_potential's own closed-form
+    Q_lm formula (not just quadrupole_spherical_to_cartesian) against
+    the independent Cartesian Theta_ab r_a r_b / r^5 implementation,
+    for tensors with non-zero xy/xz/yz components. This is the test
+    that catches a mismatched Racah factor in the potential formula
+    itself (as opposed to just in the conversion routines).
+    """
+    rng = np.random.default_rng(42)
+    thetas = np.array([_random_traceless_symmetric(s) for s in range(4)])
+    coords = rng.uniform(-1, 1, size=(4, 3))
+    points = rng.uniform(3, 5, size=(6, 3))
+
+    quads_sph = np.array(
+        [quadrupole_cartesian_to_spherical(t) for t in thetas]
+    )
+
+    v_spherical = spherical_quadrupole_potential(quads_sph, coords, points)
+    v_cartesian = quadrupole_potential(thetas, coords, points)
+
+    np.testing.assert_allclose(v_spherical, v_cartesian, atol=1e-10)
 
 
 # ---------------------------------------------------------------------------

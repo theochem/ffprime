@@ -102,6 +102,6 @@ class Bonded:
             else:
                 bonds_list[idx] = (*bond[:2], k_ij_avg)
         #return bonds_list
-#job = Bonded(log_path="bonding/lig.log", fchk_path="bonding/lig.fchk")
-#job.compute_all_k_ij(job.bonds, job.hess_new)
-#print([b[3] for b in job.bonds])  # Print the force constants for each bond
+# job = Bonded(log_path="bonding/lig.log", fchk_path="bonding/lig.fchk")
+# job.compute_all_k_ij(job.bonds, job.hess_new)
+# print([b[3] for b in job.bonds])  # Print the force constants for each bond

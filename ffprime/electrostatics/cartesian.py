@@ -221,10 +221,32 @@ def quadrupole_field(quadrupoles, atcoords, points):
     """
     Compute electric field from atomic quadrupoles (traceless).
 
+    The potential is :math:`V(\\mathbf r) = \\Theta_{ab} r_a r_b / r^5`.
+    Differentiating component-wise (using that :math:`\\Theta` is
+    symmetric, so :math:`\\Theta_{cb} r_b` appears twice -- once from
+    each index of the bilinear form -- when :math:`\\partial r_a/\\partial
+    r_c=\\delta_{ac}` is applied) gives
+
+    .. math::
+
+        \\frac{\\partial V}{\\partial r_c} =
+        \\frac{2 (\\mathbf{Q}_i \\cdot \\mathbf{r})_c}{r^5}
+        - \\frac{5 (\\mathbf{Q}_i : \\mathbf{r}\\mathbf{r})\\, r_c}{r^7}
+
+    so that :math:`\\mathbf{E} = -\\nabla V` is
+
     .. math::
 
         \\mathbf{E}(\\mathbf{r}) =
-        \\sum_i \\left[ \\frac{5(\\mathbf{Q}_i : \\mathbf{r}\\mathbf{r})\\,\\mathbf{r}}{r^7} - \\frac{\\mathbf{Q}_i \\cdot \\mathbf{r}}{r^5} \\right]
+        \\sum_i \\left[ \\frac{5(\\mathbf{Q}_i : \\mathbf{r}\\mathbf{r})\\,\\mathbf{r}}{r^7} - \\frac{2\\,\\mathbf{Q}_i \\cdot \\mathbf{r}}{r^5} \\right]
+
+    Note the factor of 2 on the second term -- it comes from the two
+    equal contractions of the symmetric tensor :math:`\\Theta` with
+    :math:`\\mathbf r` in the bilinear form :math:`\\Theta_{ab} r_a r_b`,
+    and is required for :math:`\\mathbf E = -\\nabla V` to hold exactly
+    (verified both symbolically and via finite differences against
+    ``quadrupole_potential`` in ``tests/test_multipole.py`` and
+    ``tests/test_cartesian_quadrupole_field.py``).
 
     Parameters
     ----------
@@ -258,7 +280,10 @@ def quadrupole_field(quadrupoles, atcoords, points):
     Qr = np.einsum("nab,mnb->mna", quadrupoles, r_vecs)
     term1 = (5 * Qrr[:, :, np.newaxis] * r_vecs
              / (safe_r[:, :, np.newaxis] ** 7))
-    term2 = Qr / safe_r[:, :, np.newaxis] ** 5
+    # Factor of 2: Theta is symmetric, so d/dr_c (Theta_ab r_a r_b) picks
+    # up Theta_cb r_b from both the a=c and b=c contractions -- see the
+    # derivation above.
+    term2 = 2.0 * Qr / safe_r[:, :, np.newaxis] ** 5  # corrected factor of 2
     return np.sum(term1 - term2, axis=1)
 
 
