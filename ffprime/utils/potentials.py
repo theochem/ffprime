@@ -45,7 +45,7 @@ def compute_energy_coulomb_interaction(qa, qb, c1, c2, unit="au"):
         np.array(qa).reshape(-1, 1), np.array(qb).reshape(1, -1)
     ).flatten()
     # distance unit in bohr
-    c_ener = q_mult / (r12 * angstrom)  
+    c_ener = q_mult / (r12)  
     if unit == "eV":
         # conversion to eV
         return sum(c_ener) / electronvolt  
@@ -118,7 +118,7 @@ def compute_electrostatic_energy_with_cp(
     q_nuclei = np.multiply(
             np.array(atnum_a).reshape(-1, 1), np.array(atnum_b).reshape(1, -1)
         ).flatten()
-    c_nn = q_nuclei / ((dist_ab*angstrom).flatten())
+    c_nn = q_nuclei / ((dist_ab).flatten())
     
     #Nuclei A electron B interaction 
     q_na_eb = np.multiply(
@@ -131,7 +131,7 @@ def compute_electrostatic_energy_with_cp(
             raise ValueError(f"alpha parameter {num} not found, available options: {alpha.keys()}")
     
     damp_ba = (1 - np.exp(-1*alpha_b[:, np.newaxis]*dist_ba)).flatten()# damping function to electron B
-    c_ebna = (q_na_eb/(dist_ba*angstrom).flatten())*damp_ba
+    c_ebna = (q_na_eb/(dist_ba).flatten())*damp_ba
     
     #Nuclei B electron A interaction
     q_nb_ea = np.multiply(
@@ -144,7 +144,7 @@ def compute_electrostatic_energy_with_cp(
             raise ValueError(f"alpha parameter {num} not found, available options: {alpha.keys()}")
     
     damp_ab = (1 - np.exp(-1*alpha_a[:, np.newaxis]*dist_ab)).flatten()# damping function to electron A
-    c_eanb = (q_nb_ea/(dist_ab*angstrom).flatten())*damp_ab
+    c_eanb = (q_nb_ea/(dist_ab).flatten())*damp_ab
 
     # check atomic charges and CP parameters lenghts 
     if len(qa) != len(alpha_a):
@@ -219,7 +219,7 @@ def compute_energy_dispersion_interaction(
         ).flatten()
     ) ** 0.5 
     # distance unit in bohr
-    d_ener = -c6_mean / ((r12 * angstrom) ** 6)
+    d_ener = -c6_mean / ((r12) ** 6)
     # unit depend on C6 coefficients
     return sum(d_ener)  
     
@@ -281,7 +281,7 @@ def compute_energy_dispersion_interaction_LB(
     # list of the c6 geometric mean
     c6ab = 4*eab*(sab**6)
     # distance unit in bohr
-    d_ener = -c6ab/((r12*angstrom)**6)
+    d_ener = -c6ab/((r12)**6)
     # unit depend on C6 coefficients
     return sum(d_ener)  
 
@@ -333,7 +333,7 @@ def compute_energy_repulsion_interaction(
         ).flatten()
     ) ** 0.5 
     # distance unit in bohr
-    d_ener = c12_mean / ((r12 * angstrom) ** 12)
+    d_ener = c12_mean / ((r12) ** 12)
     # unit depend on C6 coefficients
     return sum(d_ener)  
 
@@ -395,7 +395,7 @@ def compute_energy_repulsion_interaction_LB(
     # list of the c6 geometric mean
     c12ab = 4*eab*(sab**12)
     # distance unit in bohr
-    r_ener = c12ab/((r12*angstrom)**12)
+    r_ener = c12ab/((r12)**12)
     # unit depend on C6 coefficients
     return sum(r_ener)  
 
@@ -469,7 +469,7 @@ def compute_energy_dispersion_interaction_denspart_tang(
     # compute Euclidean distance between pairs of atoms in fragment 1 and 2
     r12 = scipy.spatial.distance.cdist(c1, c2, "euclidean").flatten()  # Euclidean distance
     # distance unit in bohr
-    d_ener = -c6_mean / ((r12 * angstrom) ** 6)
+    d_ener = -c6_mean / ((r12) ** 6)
     # unit depend on C6 coefficients
     return np.sum(d_ener)  
 
@@ -561,7 +561,7 @@ def compute_d1_grimme_dispersion_interaction(
         ).flatten()
     )
     # distance unit in bohr
-    d_ener = -c6_mean / ((r12 * angstrom) ** 6)
+    d_ener = -c6_mean / ((r12) ** 6)
     # make arrays of reference R0 for atoms in each fragment
     r0a = np.array([ref_r0[n] for n in atnum_a])
     r0b = np.array([ref_r0[n] for n in atnum_b])
@@ -671,7 +671,7 @@ def compute_d2_grimme_dispersion_interaction(
         ).flatten()
     ) ** 0.5  
     # distance unit in bohr
-    d_ener = -c6_mean / ((r12 * angstrom) ** 6)
+    d_ener = -c6_mean / ((r12) ** 6)
     # make arrays of reference R0 for atoms in each fragment
     r0a = np.array([ref_r0[n] for n in atnum_a])
     r0b = np.array([ref_r0[n] for n in atnum_b])
