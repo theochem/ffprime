@@ -97,11 +97,15 @@ class Partitioning:
         result = SimpleNamespace()
 
         result.name = scheme.upper()
-        result.ref_volumes = ref_volumes
-        result.volume_ratios = volume_ratios
+
+        # Electrostatic multipoles
         result.charges = atcharges
         result.atdipoles = atdipoles
         result.atquadrupoles = atquads
+
+        # Nonbonded properties
+        result.ref_volumes = ref_volumes
+        result.volume_ratios = volume_ratios
         result.c6s = c6s_eff
         result.alpha = a_eff
         result.sigma = sigma
