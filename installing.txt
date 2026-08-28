@@ -1,0 +1,1 @@
+The website said that FF' needs py10, but when I try to install it, it says it need py11 because scipy==1.16.2 needs it.

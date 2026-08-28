@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.spatial
 import scipy.constants as spc
+from scipy.optimize import newton
 
 # The unit conversion factors below can be used as follows:
 angstrom: float = spc.angstrom / spc.value("atomic unit of length")
@@ -472,6 +473,154 @@ def compute_energy_dispersion_interaction_denspart_tang(
     d_ener = -c6_mean / ((r12) ** 6)
     # unit depend on C6 coefficients
     return np.sum(d_ener)  
+
+def compute_energy_dispersion_interaction_TKAT(
+    c6a,
+    c6b,
+    c1,
+    c2,
+    alpha_a,
+    alpha_b,
+    return_mu_omega=False
+):
+    r"""
+    Compute intermolecular dispersion interaction energy using C6, c8 and c10 coefficients
+    """
+    # Reference: ¨Universal Pairise Interatomic van der Waals Potentials Based on Quantum Drude oscillator.¨
+    #            Khabibrakhmanov, A. and Fedorov, V. D. and Tkatchenko, A. J. Chem Theory Comput. 2023, 19, 7895-7909
+    #            https://doi.org/10.1021/acs.jctc.3c00797
+    # ============================================================================================
+    # 1. Input validation
+    # ============================================================================================
+    c6a = np.asarray(c6a, dtype=float)
+    c6b = np.asarray(c6b, dtype=float)
+    c1 = np.asarray(c1, dtype=float)
+    c2 = np.asarray(c2, dtype=float)
+    alpha_a = np.asarray(alpha_a, dtype=float)
+    alpha_b = np.asarray(alpha_b, dtype=float)
+    
+    if len(c6a) != len(c1):
+        raise ValueError(f"c6a and c1 length mismatch: {len(c6a)} vs {len(c1)}")
+    if len(c6b) != len(c2):
+        raise ValueError(f"c6b and c2 length mismatch: {len(c6b)} vs {len(c2)}")
+    if len(c6a) != len(alpha_a):
+        raise ValueError(f"c6a and alpha_a length mismatch: {len(c6a)} vs {len(alpha_a)}")
+    if len(c6b) != len(alpha_b):
+        raise ValueError(f"c6b and alpha_b length mismatch: {len(c6b)} vs {len(alpha_b)}")
+    
+    if np.any(c6a < 0) or np.any(c6b < 0):
+        raise ValueError("C6 coefficients must be positive")
+    if np.any(alpha_a < 0) or np.any(alpha_b < 0):
+        raise ValueError("Polarizabilities must be positive")
+    
+    # ============================================================================================
+    # 2. Compute distances in Bohr
+    # ============================================================================================
+    c1_bohr = c1 * angstrom
+    c2_bohr = c2 * angstrom
+    
+    r12 = scipy.spatial.distance.cdist(c1_bohr, c2_bohr, metric="euclidean").flatten()
+    if len(r12) == 0:
+        return 0.0, np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
+    
+    # ============================================================================================
+    # 3. Effective polarizabilities (Eq. 21 from ref: α_AB = (α_A + α_B) / 2)
+    # ============================================================================================
+    alpha_matrix = (alpha_a[:, np.newaxis] + alpha_b[np.newaxis, :]) / 2
+    alpha_pair = alpha_matrix.flatten()
+    
+    # ============================================================================================
+    # 4. Effective C6 coefficients (Eq. 19 from ref)
+    # ============================================================================================
+    c6_a_matrix = c6a[:, np.newaxis]
+    c6_b_matrix = c6b[np.newaxis, :]
+    alpha_a_matrix = alpha_a[:, np.newaxis]
+    alpha_b_matrix = alpha_b[np.newaxis, :]
+    
+    numerator = 2.0 * alpha_a_matrix * alpha_b_matrix * c6_a_matrix * c6_b_matrix
+    denominator = c6_a_matrix * (alpha_b_matrix ** 2) + c6_b_matrix * (alpha_a_matrix ** 2)
+    c6_matrix = numerator / denominator
+    c6_pair = c6_matrix.flatten()
+    
+    # ============================================================================================
+    # 5. Quantum Drude oscillator parametrization (Eq. S33 supporting info)
+    # ============================================================================================
+
+    alpha_fsc = spc.alpha
+    a_const = 9 * alpha_fsc**(4/3) / 64
+
+    muomega = np.zeros_like(alpha_pair)
+    for i, alpha in enumerate(alpha_pair):
+        b_const = 2 * alpha**(2/7) / alpha_fsc**(8/21)
+        def f(x):
+            """Equation: a*exp(b*x) - (2*x² + x/b) = 0"""
+            exponent = b_const * x
+            if exponent > 700:
+                return a_const * np.exp(700) - 2*x**2 - x/b_const
+            return a_const*np.exp(exponent) - 2*x**2 - x/b_const
+
+
+        def df(x):
+            """Derivative"""
+            exponent = b_const*x
+            if exponent > 700:
+                return a_const*b_const*np.exp(700) - 4*x - 1/b_const
+            return a_const*b_const*np.exp(exponent) - 4*x - 1/b_const
+        x0 = 0.5 + 0.3/(1 + alpha/10) # Initial guess
+        
+        x = newton(
+        f,
+        x0,
+        fprime=df,
+        tol=1e-12,
+        maxiter=100
+    )
+
+    if np.isfinite(x) and x > 1e-8:
+        muomega[i] = x
+    else:
+        raise RuntimeError(f"Non physical root for alpha={alpha}")
+    
+    # ============================================================================================
+    # 6. Compute C8 and C10 coefficients (Eq. 2 from ref)
+    # ============================================================================================
+    c8_pair = 5 * c6_pair / muomega
+    c10_pair = (245 / 8) * c6_pair / muomega**2
+    
+    # ============================================================================================
+    # 7. Compute dispersion energy with QDO damping function
+    #    Damping function (Eq. 24 from reference)
+    #    f_{2n}(z) = 1 - exp(-z) * sum_{k=0}^{n} z^k / k!
+    #    z = (gamma * R)^2 / 2, gamma = sqrt(muomega) (in a.u., hbar = 1)
+    # ============================================================================================
+    r6 = r12 ** 6
+    r8 = r12 ** 8
+    r10 = r12 ** 10
+    
+    # Calculate damping functions
+    gamma = np.sqrt(muomega)
+    z = (gamma[:, np.newaxis] * r12)**2 / 2
+    
+    f6 = 1.0 - np.exp(-z) * (1 + z + z**2/2 + z**3/6)
+    f8 = 1.0 - np.exp(-z) * (1 + z + z**2/2 + z**3/6 + z**4/24)
+    f10 = 1.0 - np.exp(-z) * (1 + z + z**2/2 + z**3/6 + z**4/24 + z**5/120)
+    
+    # Damped dispersion energy
+    HARTREE_TO_KCAL = 627.509  # kcal/mol
+    d_ener_hartree = -f6 * c6_pair / r6 - f8 * c8_pair / r8 - f10 * c10_pair / r10
+    total_energy_hartree = np.sum(d_ener_hartree)
+    total_energy_kcal = total_energy_hartree * HARTREE_TO_KCAL
+
+    # ============================================================================================
+    # 8. Optional: Return mu and omega separately parameters for QDO model
+    # ============================================================================================
+    if return_mu_omega:
+        # C₆ = (3/4) * omega * α²  (atomic units)
+        omega = (4 * c6_pair) / (3 * alpha_pair**2)
+        mu = muomega / omega
+        return total_energy_kcal, c6_pair, c8_pair, c10_pair, muomega, r12, mu, omega
+    
+    return total_energy_kcal, c6_pair, c8_pair, c10_pair, muomega, r12
 
 def compute_d1_grimme_dispersion_interaction(
     c6a,
